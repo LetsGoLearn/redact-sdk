@@ -56,6 +56,37 @@ final class ClientTest extends TestCase
         $this->assertTrue($result->hasPii());
     }
 
+    public function testRedactPartsBuildsPayloadAndMapsResult(): void
+    {
+        $transport = (new FakeTransport())->queueJson(200, [
+            'parts' => ['Birthdate', '[DOB]', 'Student ID #', '[ACCOUNT]'],
+            'entities' => [
+                ['start' => 11, 'end' => 21, 'score' => 1, 'label' => 'date_of_birth'],
+                ['start' => 37, 'end' => 42, 'score' => 1, 'label' => 'account_number'],
+            ],
+            'counts' => ['date_of_birth' => 1, 'account_number' => 1],
+        ]);
+
+        $result = $this->client($transport)->redactParts(
+            ['Birthdate', '04/24/2015', 'Student ID #', '20470'],
+            Policy::make()->withDefault(Mode::Tag),
+        );
+
+        $request = $transport->lastRequest();
+        $this->assertNotNull($request);
+        $this->assertSame('POST', $request->method);
+        $this->assertSame('/v1/redact', $request->path);
+        $this->assertSame([
+            'parts' => ['Birthdate', '04/24/2015', 'Student ID #', '20470'],
+            'policy' => ['default' => 'tag'],
+        ], $request->json);
+
+        $this->assertSame(['Birthdate', '[DOB]', 'Student ID #', '[ACCOUNT]'], $result->parts);
+        $this->assertSame(2, $result->count());
+        $this->assertSame(1, $result->count('date_of_birth'));
+        $this->assertTrue($result->hasPii());
+    }
+
     public function testDefaultThresholdApplied(): void
     {
         $transport = (new FakeTransport())->queueJson(200, ['redacted' => 'x', 'entities' => [], 'counts' => []]);

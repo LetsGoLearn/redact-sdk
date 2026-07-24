@@ -6,6 +6,7 @@ namespace RedactSdk;
 
 use RedactSdk\DTO\Label;
 use RedactSdk\DTO\Policy;
+use RedactSdk\DTO\RedactPartsResult;
 use RedactSdk\DTO\RedactResult;
 use RedactSdk\Exceptions\ApiException;
 use RedactSdk\Exceptions\TransportException;
@@ -67,6 +68,42 @@ final class Client
         $response = $this->transport->send($this->redactRequest($text, $policy, $threshold));
 
         return RedactResult::fromArray($this->unwrap($response));
+    }
+
+    /**
+     * Redact many related strings in ONE request, with shared document
+     * context. The server joins the parts with a paragraph break before
+     * classification, so entities that span or depend on neighboring parts —
+     * e.g. a form label ("Birthdate", "Student ID #") in one HTML text node
+     * and its value in the next — are detected; each part is returned
+     * redacted individually, in input order.
+     *
+     * Prefer this over redactMany() when the strings are fragments of one
+     * document (HTML text nodes, PDF lines); use redactMany() for unrelated
+     * texts (e.g. one per ticket).
+     *
+     * @param list<string>                     $parts
+     * @param Policy|array<string, mixed>|null $policy
+     */
+    public function redactParts(array $parts, Policy|array|null $policy = null, ?float $threshold = null): RedactPartsResult
+    {
+        $payload = ['parts' => array_values($parts)];
+
+        $threshold ??= $this->config->defaultThreshold;
+        if ($threshold !== null) {
+            $payload['threshold'] = $threshold;
+        }
+
+        if ($policy !== null) {
+            $serialized = $policy instanceof Policy ? $policy->toArray() : $policy;
+            if ($serialized !== []) {
+                $payload['policy'] = $serialized;
+            }
+        }
+
+        $response = $this->transport->send(new Request('POST', '/v1/redact', $payload));
+
+        return RedactPartsResult::fromArray($this->unwrap($response));
     }
 
     /**

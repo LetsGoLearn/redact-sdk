@@ -93,14 +93,68 @@ public function __construct(private \RedactSdk\Client $redact) {}
 | `Mode::KeepFirst` | keep first name, strip surname: `Jane Doe` → `Jane [LAST]` |
 | `Mode::Drop` | remove the span |
 
-Build policies fluently (each call returns a new, immutable `Policy`):
+Build policies fluently (each call returns a new, immutable `Policy`). The
+`Label` DTO exposes constants for every supported label — prefer them over raw
+strings:
+
+```php
+use RedactSdk\DTO\Label;
+
+Policy::make()
+    ->withDefault(Mode::Tag)
+    ->label(Label::PERSON, Mode::KeepFirst)
+    ->label(Label::SECRET, Mode::Drop)
+    ->only(Label::PERSON, Label::EMAIL, Label::SECRET); // allow-list (optional)
+```
+
+### Allow-lists and label coverage
+
+When you use `only(...)`, spans with labels outside the list pass through
+**unredacted** — keep the list current when the server adds labels. Current
+labels: `Label::PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `DATE`, `URL`, `GRADE`,
+`DATE_OF_BIRTH`, `ACCOUNT_NUMBER`, `SECRET` (or fetch them live via
+`$client->labels()`).
+
+Two date labels exist so you can strip birthdates without losing meaningful
+event dates (tests taken, meetings held):
+
+- `Label::DATE_OF_BIRTH` — dates anchored to a birth-related field label
+  ("Birthdate 04/24/2015", "DOB: 4-24-15"). Detected deterministically.
+- `Label::DATE` — any other date the NER model finds. Allowing `DATE` also
+  covers `DATE_OF_BIRTH` server-side, so birthdates can never leak; the
+  reverse does not hold.
+
+Typical education-records policy (strip identity, keep event dates):
 
 ```php
 Policy::make()
     ->withDefault(Mode::Tag)
-    ->label('private_person', Mode::KeepFirst)
-    ->label('secret', Mode::Drop)
-    ->only('private_person', 'private_email', 'secret'); // allow-list (optional)
+    ->label(Label::PERSON, Mode::KeepFirst)
+    ->only(
+        Label::PERSON,
+        Label::EMAIL,
+        Label::PHONE,
+        Label::ADDRESS,
+        Label::DATE_OF_BIRTH, // birthdates stripped...
+        // Label::DATE omitted: ...but test/meeting dates survive
+        Label::GRADE,
+        Label::ACCOUNT_NUMBER,
+        Label::SECRET,
+    );
+```
+
+## Document fragments (parts)
+
+When many strings are fragments of ONE document — HTML text nodes, PDF lines —
+use `redactParts()`, not `redactMany()`. The server classifies the parts as a
+single joined document, so a form label in one fragment and its value in the
+next ("Birthdate" / "04/24/2015") are still detected; each fragment comes back
+redacted individually, in order:
+
+```php
+$result = $client->redactParts(['Student', 'Doe, Jane', 'Birthdate', '04/24/2015']);
+$result->parts;  // ['Student', '[PERSON]', 'Birthdate', '[DOB]']
+$result->count(); // 2
 ```
 
 ## Concurrent batch
