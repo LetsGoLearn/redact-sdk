@@ -33,7 +33,7 @@
         }
     },
     "suggest": {
-        "laravel/framework": "For the service provider, facade, and config integration (^9 || ^10 || ^11 || ^12)."
+        "laravel/framework": "For the service provider, facade, and config integration (^9 || ^10 || ^11 || ^12 || ^13)."
     },
     "scripts": {
         "test": "phpunit"
