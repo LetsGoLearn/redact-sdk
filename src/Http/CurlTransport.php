@@ -124,8 +124,11 @@ final class CurlTransport implements Transport
                 $body = (string) curl_multi_getcontent($ch);
                 $retryable = ($errno !== 0 && $this->transient($errno)) || $status >= 500;
 
+                // No curl_close(): a no-op since PHP 8.0 (handles are freed when
+                // the last reference drops) and deprecated as of 8.5. Removing
+                // it from the multi handle and letting $ch fall out of scope is
+                // what actually releases it.
                 curl_multi_remove_handle($multi, $ch);
-                curl_close($ch);
 
                 if ($retryable && $attempt < $this->retries) {
                     $this->backoff($attempt);
@@ -235,10 +238,6 @@ final class CurlTransport implements Transport
         usleep($this->retryBaseDelayMs * 1000 * (2 ** $attempt));
     }
 
-    public function __destruct()
-    {
-        if (isset($this->handle)) {
-            curl_close($this->handle);
-        }
-    }
+    // No __destruct: curl_close() has been a no-op since PHP 8.0 and is
+    // deprecated as of 8.5, and the handle is released with the object anyway.
 }

@@ -174,6 +174,11 @@ final class Client
      * @param bool                             $ocr      Run OCR on a scanned PDF. Minutes-slow;
      *                                                   leave false and catch NeedsOcrException
      *                                                   to queue it out of band.
+     * @param bool                             $redact   False converts only, skipping
+     *                                                   classification entirely. This must be
+     *                                                   explicit: omitting the policy does NOT
+     *                                                   mean "don't redact" — the server's
+     *                                                   default policy tags every label.
      * @param float|null                       $timeout  Per-request timeout in seconds. Defaults
      *                                                   to the config's document timeout, since
      *                                                   conversion far exceeds the text-redaction
@@ -188,8 +193,15 @@ final class Client
         bool $ocr = false,
         ?string $filename = null,
         ?float $timeout = null,
+        bool $redact = true,
     ): RedactDocumentResult {
         $fields = ['ocr' => $ocr ? 'auto' : 'off'];
+
+        // An absent policy means "use the server default", which redacts
+        // everything — so convert-only has to be requested explicitly.
+        if ($redact === false) {
+            $fields['redact'] = 'false';
+        }
 
         $threshold ??= $this->config->defaultThreshold;
         if ($threshold !== null) {

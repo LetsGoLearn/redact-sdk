@@ -116,6 +116,28 @@ final class DocumentTest extends TestCase
         $this->client($transport)->redactDocument(path: $this->file);
     }
 
+    /**
+     * Convert-only must be requested explicitly. Omitting the policy does NOT
+     * mean "leave the document alone" — the server's default policy tags every
+     * label, so a caller that only wanted conversion would otherwise get a
+     * fully redacted document back.
+     */
+    public function testConvertOnlyIsRequestedExplicitly(): void
+    {
+        $transport = (new FakeTransport)
+            ->queueJson(200, ['html' => '<p>Jane Doe</p>'])
+            ->queueJson(200, ['html' => '<p>[PERSON]</p>']);
+
+        $client = $this->client($transport);
+
+        $client->redactDocument(path: $this->file, redact: false);
+        self::assertSame('false', $transport->lastRequest()->multipart->fields['redact']);
+
+        // Redacting stays the default, and must not send the flag at all.
+        $client->redactDocument(path: $this->file);
+        self::assertArrayNotHasKey('redact', $transport->lastRequest()->multipart->fields);
+    }
+
     public function testNoPolicySendsNoPolicyField(): void
     {
         $transport = (new FakeTransport)->queueJson(200, ['html' => '<p>Jane Doe</p>']);
