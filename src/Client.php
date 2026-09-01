@@ -12,6 +12,7 @@ use RedactSdk\DTO\RedactResult;
 use RedactSdk\Exceptions\ApiException;
 use RedactSdk\Exceptions\NeedsOcrException;
 use RedactSdk\Exceptions\TransportException;
+use RedactSdk\Exceptions\ValidationException;
 use RedactSdk\Http\CurlTransport;
 use RedactSdk\Http\Multipart;
 use RedactSdk\Http\Request;
@@ -183,6 +184,11 @@ final class Client
      *                                                   to the config's document timeout, since
      *                                                   conversion far exceeds the text-redaction
      *                                                   default.
+     * @param string                           $format   'html' preserves structure and is
+     *                                                   what you store for viewing;
+     *                                                   'markdown' is linear text, for
+     *                                                   injecting a document into an LLM
+     *                                                   prompt.
      *
      * @throws NeedsOcrException when the PDF has no text layer and $ocr is false.
      */
@@ -194,8 +200,13 @@ final class Client
         ?string $filename = null,
         ?float $timeout = null,
         bool $redact = true,
+        string $format = 'html',
     ): RedactDocumentResult {
-        $fields = ['ocr' => $ocr ? 'auto' : 'off'];
+        if (!in_array($format, ['html', 'markdown'], true)) {
+            throw new ValidationException("format must be 'html' or 'markdown'", 400);
+        }
+
+        $fields = ['ocr' => $ocr ? 'auto' : 'off', 'format' => $format];
 
         // An absent policy means "use the server default", which redacts
         // everything — so convert-only has to be requested explicitly.

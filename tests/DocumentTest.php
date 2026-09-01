@@ -138,6 +138,42 @@ final class DocumentTest extends TestCase
         self::assertArrayNotHasKey('redact', $transport->lastRequest()->multipart->fields);
     }
 
+    public function testMarkdownFormat(): void
+    {
+        $transport = (new FakeTransport)->queueJson(200, [
+            'markdown' => "# Report\n\nEmail [EMAIL]",
+            'counts'   => ['private_email' => 1],
+        ]);
+
+        $result = $this->client($transport)->redactDocument(
+            path: $this->file,
+            format: 'markdown',
+        );
+
+        self::assertSame('markdown', $transport->lastRequest()->multipart->fields['format']);
+        self::assertSame("# Report\n\nEmail [EMAIL]", $result->markdown);
+        self::assertSame('', $result->html);
+        // content() returns whichever format came back.
+        self::assertSame($result->markdown, $result->content());
+        self::assertSame(1, $result->count());
+    }
+
+    public function testHtmlIsTheDefaultFormat(): void
+    {
+        $transport = (new FakeTransport)->queueJson(200, ['html' => '<p>x</p>']);
+
+        $result = $this->client($transport)->redactDocument(path: $this->file);
+
+        self::assertSame('html', $transport->lastRequest()->multipart->fields['format']);
+        self::assertSame('<p>x</p>', $result->content());
+    }
+
+    public function testRejectsUnknownFormat(): void
+    {
+        $this->expectException(\RedactSdk\Exceptions\ValidationException::class);
+        $this->client(new FakeTransport)->redactDocument(path: $this->file, format: 'pdf');
+    }
+
     public function testNoPolicySendsNoPolicyField(): void
     {
         $transport = (new FakeTransport)->queueJson(200, ['html' => '<p>Jane Doe</p>']);

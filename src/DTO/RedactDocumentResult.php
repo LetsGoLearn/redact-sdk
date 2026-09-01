@@ -7,24 +7,28 @@ namespace RedactSdk\DTO;
 /**
  * Result of a whole-document redaction (Client::redactDocument).
  *
- * The server converted the uploaded file to HTML and classified every text node
- * as ONE document, so entities that depend on neighboring nodes — a form label
- * ("Birthdate", "Student ID #") and its value in the next cell — are detected.
- * Markup is preserved; only text nodes are rewritten.
+ * The server converted the uploaded file and classified it as ONE document, so
+ * entities that depend on their neighbours — a form label ("Birthdate",
+ * "Student ID #") and its value in the next cell — are detected. For `html`,
+ * markup is preserved and only text nodes are rewritten; for `markdown` the
+ * whole document is classified as a single buffer.
  */
 final class RedactDocumentResult
 {
     /**
-     * @param string             $html     Converted document with text redacted in place.
+     * @param string             $html     Set for format=html; empty otherwise.
      * @param list<Entity>       $entities Redacted spans; offsets are relative to the
-     *                                     joined text of the document's text nodes,
-     *                                     not to the HTML.
+     *                                     classified text (the joined text nodes for
+     *                                     html, the whole document for markdown), not
+     *                                     to the returned markup.
      * @param array<string, int> $counts   Redaction count per label.
+     * @param string             $markdown Set for format=markdown; empty otherwise.
      */
     public function __construct(
         public readonly string $html,
         public readonly array $entities,
         public readonly array $counts,
+        public readonly string $markdown = '',
     ) {
     }
 
@@ -41,7 +45,18 @@ final class RedactDocumentResult
         /** @var array<string, int> $counts */
         $counts = $data['counts'] ?? [];
 
-        return new self((string) ($data['html'] ?? ''), $entities, $counts);
+        return new self(
+            (string) ($data['html'] ?? ''),
+            $entities,
+            $counts,
+            (string) ($data['markdown'] ?? ''),
+        );
+    }
+
+    /** The redacted document, whichever format was requested. */
+    public function content(): string
+    {
+        return $this->markdown !== '' ? $this->markdown : $this->html;
     }
 
     /** Total redactions, or the count for a single label when given. */
