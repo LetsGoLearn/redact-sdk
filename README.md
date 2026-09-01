@@ -68,6 +68,10 @@ REDACT_API_KEY=your-api-key
 REDACT_TIMEOUT=10
 REDACT_RETRIES=2
 REDACT_DEFAULT_THRESHOLD=0.5
+# whole-document calls (redactDocument) — conversion + classification is
+# seconds, OCR is minutes, so they don't use REDACT_TIMEOUT
+REDACT_DOCUMENT_TIMEOUT=120
+REDACT_OCR_TIMEOUT=600
 ```
 
 Use the facade or inject the client:
@@ -156,6 +160,45 @@ $result = $client->redactParts(['Student', 'Doe, Jane', 'Birthdate', '04/24/2015
 $result->parts;  // ['Student', '[PERSON]', 'Birthdate', '[DOB]']
 $result->count(); // 2
 ```
+
+## Whole documents
+
+`redactDocument()` uploads a file (PDF, DOCX, DOC, RTF, ODT, EPUB) and gets back
+HTML with its text nodes redacted in place. The server converts AND classifies
+in one request, so this replaces "convert locally, then call `redactParts()` per
+chunk":
+
+```php
+use RedactSdk\Exceptions\NeedsOcrException;
+
+try {
+    $result = $client->redactDocument(
+        path: '/path/to/iep.pdf',
+        policy: Policy::make()->label('private_person', Mode::KeepFirst),
+    );
+    $result->html;    // '<td>Birthdate</td><td>[DOB]</td>…'
+    $result->count(); // total redactions
+} catch (NeedsOcrException) {
+    // Scanned PDF, no text layer. OCR takes minutes — queue it:
+    //   $client->redactDocument(path: $path, ocr: true)
+}
+```
+
+Prefer this over converting yourself. The whole document is classified in a
+single pass, so a form label and its value stay in the same context — chunking a
+document across requests separates them and label-anchored PII (birthdates,
+student IDs) stops being detected.
+
+Pass `ocr: true` only from a queued job. Pass `redact: false` server-side (via
+the endpoint's `redact` field) when you only need conversion — that skips
+classification entirely.
+
+The file streams from disk via `CURLFile`, so a large document never lands in
+PHP's heap. These calls use `document_timeout` (120s) or `ocr_timeout` (600s)
+rather than the short `timeout` tuned for text redaction.
+
+Requires the conversion toolchain installed alongside the redactor
+(`mutool`, `pandoc`, `antiword`, `ocrmypdf`); the endpoint reports 501 without it.
 
 ## Concurrent batch
 

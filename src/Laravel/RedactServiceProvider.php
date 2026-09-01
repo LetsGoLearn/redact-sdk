@@ -29,6 +29,8 @@ class RedactServiceProvider extends ServiceProvider
                 retries: (int) ($config['retries'] ?? 2),
                 retryDelayMs: (int) ($config['retry_delay_ms'] ?? 100),
                 defaultThreshold: isset($config['default_threshold']) ? (float) $config['default_threshold'] : null,
+                documentTimeout: (float) ($config['document_timeout'] ?? 120.0),
+                ocrTimeout: (float) ($config['ocr_timeout'] ?? 600.0),
             ));
         });
 

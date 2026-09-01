@@ -167,7 +167,7 @@ final class CurlTransport implements Transport
             CURLOPT_HEADER => false,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_CONNECTTIMEOUT_MS => (int) ($this->connectTimeout * 1000),
-            CURLOPT_TIMEOUT_MS => (int) ($this->timeout * 1000),
+            CURLOPT_TIMEOUT_MS => (int) (($request->timeout ?? $this->timeout) * 1000),
             CURLOPT_TCP_KEEPALIVE => 1,
             CURLOPT_SHARE => $this->share,
             CURLOPT_ENCODING => '', // accept + transparently decode gzip/deflate
@@ -180,6 +180,21 @@ final class CurlTransport implements Transport
             }
             $options[CURLOPT_POSTFIELDS] = $payload;
             $headers[] = 'Content-Type: application/json';
+        } elseif ($request->multipart !== null) {
+            $multipart = $request->multipart;
+            if (!is_file($multipart->path) || !is_readable($multipart->path)) {
+                throw new TransportException("upload file is not readable: {$multipart->path}");
+            }
+            // Passing an array makes cURL build the multipart body and set its
+            // own Content-Type with the boundary — do not set one here. CURLFile
+            // streams from disk rather than buffering the document in memory.
+            $options[CURLOPT_POSTFIELDS] = $multipart->fields + [
+                $multipart->field => new \CURLFile(
+                    $multipart->path,
+                    'application/octet-stream',
+                    $multipart->filename ?? basename($multipart->path),
+                ),
+            ];
         }
 
         $options[CURLOPT_HTTPHEADER] = $headers;

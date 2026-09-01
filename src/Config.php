@@ -18,6 +18,14 @@ final class Config
         public readonly int $retryDelayMs = 100,
         public readonly ?float $defaultThreshold = null,
         public readonly string $userAgent = 'redact-sdk-php/1.0',
+        /**
+         * Timeout for redactDocument(). Conversion plus a whole-document
+         * classification takes seconds, so the short default tuned for text
+         * redaction would abort it.
+         */
+        public readonly float $documentTimeout = 120.0,
+        /** Timeout when redactDocument() is asked to OCR — Tesseract per page. */
+        public readonly float $ocrTimeout = 600.0,
     ) {
     }
 

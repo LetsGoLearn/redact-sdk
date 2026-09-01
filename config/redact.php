@@ -25,6 +25,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Document timeouts (Client::redactDocument)
+    |--------------------------------------------------------------------------
+    | A whole-document call converts the file AND classifies it in one request,
+    | which takes seconds — far longer than the text-redaction `timeout` above,
+    | so it gets its own budget. OCR runs Tesseract per page and needs minutes;
+    | it should only ever be requested from a queued job.
+    */
+    'document_timeout' => (float) env('REDACT_DOCUMENT_TIMEOUT', 120.0),
+    'ocr_timeout' => (float) env('REDACT_OCR_TIMEOUT', 600.0),
+
+    /*
+    |--------------------------------------------------------------------------
     | Redaction defaults
     |--------------------------------------------------------------------------
     | Applied when a call does not pass an explicit threshold. Leave null to use

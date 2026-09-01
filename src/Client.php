@@ -6,11 +6,14 @@ namespace RedactSdk;
 
 use RedactSdk\DTO\Label;
 use RedactSdk\DTO\Policy;
+use RedactSdk\DTO\RedactDocumentResult;
 use RedactSdk\DTO\RedactPartsResult;
 use RedactSdk\DTO\RedactResult;
 use RedactSdk\Exceptions\ApiException;
+use RedactSdk\Exceptions\NeedsOcrException;
 use RedactSdk\Exceptions\TransportException;
 use RedactSdk\Http\CurlTransport;
+use RedactSdk\Http\Multipart;
 use RedactSdk\Http\Request;
 use RedactSdk\Http\Response;
 use RedactSdk\Http\Transport;
@@ -55,6 +58,8 @@ final class Client
             retries: (int) ($options['retries'] ?? 2),
             retryDelayMs: (int) ($options['retry_delay_ms'] ?? 100),
             defaultThreshold: isset($options['default_threshold']) ? (float) $options['default_threshold'] : null,
+            documentTimeout: (float) ($options['document_timeout'] ?? 120.0),
+            ocrTimeout: (float) ($options['ocr_timeout'] ?? 600.0),
         ));
     }
 
@@ -154,6 +159,77 @@ final class Client
         }
 
         return $results;
+    }
+
+    /**
+     * Convert AND redact a document (PDF, DOCX, DOC, RTF, ODT, EPUB) in ONE
+     * request, returning HTML with its text nodes redacted in place.
+     *
+     * Prefer this over converting locally and calling redactParts(): the server
+     * classifies the whole document in a single pass, so a form label and its
+     * value stay in the same context, and one round trip replaces one per chunk.
+     *
+     * @param string                           $path     Absolute path to the document.
+     * @param Policy|array<string, mixed>|null $policy
+     * @param bool                             $ocr      Run OCR on a scanned PDF. Minutes-slow;
+     *                                                   leave false and catch NeedsOcrException
+     *                                                   to queue it out of band.
+     * @param float|null                       $timeout  Per-request timeout in seconds. Defaults
+     *                                                   to the config's document timeout, since
+     *                                                   conversion far exceeds the text-redaction
+     *                                                   default.
+     *
+     * @throws NeedsOcrException when the PDF has no text layer and $ocr is false.
+     */
+    public function redactDocument(
+        string $path,
+        Policy|array|null $policy = null,
+        ?float $threshold = null,
+        bool $ocr = false,
+        ?string $filename = null,
+        ?float $timeout = null,
+    ): RedactDocumentResult {
+        $fields = ['ocr' => $ocr ? 'auto' : 'off'];
+
+        $threshold ??= $this->config->defaultThreshold;
+        if ($threshold !== null) {
+            $fields['threshold'] = (string) $threshold;
+        }
+
+        if ($policy !== null) {
+            $serialized = $policy instanceof Policy ? $policy->toArray() : $policy;
+            if ($serialized !== []) {
+                $encoded = json_encode($serialized, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                if ($encoded === false) {
+                    throw new TransportException('failed to encode policy: ' . json_last_error_msg());
+                }
+                $fields['policy'] = $encoded;
+            }
+        }
+
+        $response = $this->transport->send(new Request(
+            method: 'POST',
+            path: '/v1/documents:redact',
+            multipart: new Multipart(
+                path: $path,
+                field: 'file',
+                filename: $filename,
+                fields: $fields,
+            ),
+            timeout: $timeout ?? ($ocr ? $this->config->ocrTimeout : $this->config->documentTimeout),
+        ));
+
+        // needs_ocr is a documented outcome rather than an error, so it gets its
+        // own exception type instead of a generic 422.
+        if ($response->status === 422 && ($response->data['error'] ?? null) === 'needs_ocr') {
+            throw new NeedsOcrException(
+                'document has no text layer; OCR required',
+                $response->status,
+                $response->data,
+            );
+        }
+
+        return RedactDocumentResult::fromArray($this->unwrap($response));
     }
 
     /**
